@@ -34,7 +34,7 @@ class TelegramClient:
 
     async def send_message(self, notification: NotificationRequest) -> None:
         self._settings.validate_runtime()
-        url = f"https://api.telegram.org/bot{self._settings.telegram_bot_token}/sendMessage"
+        url = f"{self._settings.telegram_api_base_url}/bot{self._settings.telegram_bot_token}/sendMessage"
         payload = {
             "chat_id": self._settings.telegram_chat_id,
             "text": format_notification(notification),
@@ -45,7 +45,14 @@ class TelegramClient:
         async with httpx.AsyncClient(timeout=self._settings.request_timeout_seconds) as client:
             response = await client.post(url, json=payload)
 
-        response.raise_for_status()
+        if response.status_code >= 400:
+            description = response.text
+            try:
+                description = response.json().get("description", description)
+            except ValueError:
+                pass
+            raise RuntimeError(f"Telegram API returned HTTP {response.status_code}: {description}")
+
         result = response.json()
         if not result.get("ok"):
             description = result.get("description", "unknown Telegram API error")

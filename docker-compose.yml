@@ -1,8 +1,10 @@
+version: "3.3"
+
 services:
   notification-bot:
     build: .
     env_file:
       - .env
     ports:
-      - "8000:8000"
+      - "2005:8000"
     restart: unless-stopped
