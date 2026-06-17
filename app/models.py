@@ -1,9 +1,9 @@
-from enum import StrEnum
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
 
-class NotificationKind(StrEnum):
+class NotificationKind(str, Enum):
     critical = "critical"
     info = "info"
     debug = "debug"
