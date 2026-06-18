@@ -5,7 +5,7 @@
 Endpoint:
 
 ```text
-POST http://<server>:2005/notify
+POST http://185.58.204.104:2005/notify
 Authorization: Bearer <NOTIFY_API_TOKEN>
 Content-Type: application/json
 ```
