@@ -89,3 +89,43 @@ jobs:
       - name: Health check
         run: |
           ssh "$SSH_USER@$SSH_HOST" "curl -fsS http://127.0.0.1:2005/health"
+
+      - name: Notify deployment
+        env:
+          NOTIFY_API_URL: ${{ secrets.NOTIFY_API_URL }}
+          NOTIFY_API_TOKEN: ${{ secrets.NOTIFY_API_TOKEN }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message || github.event.pull_request.title || 'Manual deployment' }}
+          COMMIT_AUTHOR: ${{ github.event.head_commit.author.name || github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$NOTIFY_API_URL" ] || [ -z "$NOTIFY_API_TOKEN" ]; then
+            echo "Deployment notification skipped: NOTIFY_API_URL or NOTIFY_API_TOKEN is not configured."
+            exit 0
+          fi
+
+          python - <<'PY' > /tmp/deploy-notification.json
+          import json
+          import os
+
+          sha = os.environ["COMMIT_SHA"]
+          payload = {
+              "type": "info",
+              "title": "Deployment completed",
+              "message": "\n".join(
+                  [
+                      f"Commit: {sha[:7]}",
+                      f"Author: {os.environ['COMMIT_AUTHOR']}",
+                      f"Message: {os.environ['COMMIT_MESSAGE']}",
+                      f"Run: {os.environ['RUN_URL']}",
+                  ]
+              ),
+              "source": "github-actions",
+          }
+          print(json.dumps(payload))
+          PY
+          curl -fsS \
+            -X POST "$NOTIFY_API_URL" \
+            -H "Authorization: Bearer $NOTIFY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/deploy-notification.json

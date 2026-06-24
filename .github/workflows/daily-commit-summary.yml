@@ -1,0 +1,92 @@
+name: Daily Commit Summary
+
+on:
+  schedule:
+    # 23:55 Europe/Moscow. GitHub cron is UTC.
+    - cron: "55 20 * * *"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Europe/Moscow date to summarize, YYYY-MM-DD. Defaults to today."
+        required: false
+        type: string
+
+jobs:
+  summary:
+    name: Send daily commit summary
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Send summary
+        env:
+          NOTIFY_API_URL: ${{ secrets.NOTIFY_API_URL }}
+          NOTIFY_API_TOKEN: ${{ secrets.NOTIFY_API_TOKEN }}
+          INPUT_DATE: ${{ github.event.inputs.date }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$NOTIFY_API_URL" ] || [ -z "$NOTIFY_API_TOKEN" ]; then
+            echo "Daily commit summary skipped: NOTIFY_API_URL or NOTIFY_API_TOKEN is not configured."
+            exit 0
+          fi
+
+          python - <<'PY' > /tmp/daily-commit-summary.json
+          import json
+          import os
+          import subprocess
+          from datetime import datetime, time
+          from zoneinfo import ZoneInfo
+
+          tz = ZoneInfo("Europe/Moscow")
+          input_date = os.getenv("INPUT_DATE", "").strip()
+          if input_date:
+              day = datetime.strptime(input_date, "%Y-%m-%d").date()
+          else:
+              day = datetime.now(tz).date()
+
+          start = datetime.combine(day, time.min, tzinfo=tz)
+          end = datetime.combine(day, time.max, tzinfo=tz)
+
+          output = subprocess.check_output(
+              [
+                  "git",
+                  "log",
+                  f"--since={start.isoformat()}",
+                  f"--until={end.isoformat()}",
+                  "--date=short",
+                  "--pretty=format:%h%x09%an%x09%s",
+              ],
+              text=True,
+          ).strip()
+
+          commits = [line.split("\t", 2) for line in output.splitlines() if line.strip()]
+          lines = [
+              f"Date: {day.isoformat()} MSK",
+              f"Commits: {len(commits)}",
+          ]
+          if commits:
+              lines.append("")
+              lines.extend(f"- {sha} {author}: {subject}" for sha, author, subject in commits[:20])
+              if len(commits) > 20:
+                  lines.append(f"- ...and {len(commits) - 20} more")
+          lines.append("")
+          lines.append(f"Run: {os.environ['RUN_URL']}")
+
+          payload = {
+              "type": "info",
+              "title": "Daily commit summary",
+              "message": "\n".join(lines),
+              "source": "github-actions",
+          }
+          print(json.dumps(payload))
+          PY
+
+          curl -fsS \
+            -X POST "$NOTIFY_API_URL" \
+            -H "Authorization: Bearer $NOTIFY_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/daily-commit-summary.json

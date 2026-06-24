@@ -1,0 +1,15 @@
+[Unit]
+Description=Lightweight server availability monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/server-monitor.env
+ExecStart=/usr/bin/python3 /opt/server-monitor/server_monitor.py
+Restart=always
+RestartSec=10
+StateDirectory=server-monitor
+
+[Install]
+WantedBy=multi-user.target
